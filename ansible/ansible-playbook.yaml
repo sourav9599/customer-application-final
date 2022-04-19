@@ -1,0 +1,10 @@
+- hosts: web
+  tasks:
+    - name: Fetch artifact from jfrog artifactory
+      get_url:
+        url: http://35.207.230.186:8082/artifactory/maven-local-release/com/mindtree/customer/0.0.1/customer-0.0.1.jar
+        dest: /home/sourav10mohanty/
+        url_username: admin
+        url_password: AKCp8k7uWFz3BymycvaJBhRvtvJB3eQDYfrNzvuX4UaBoLmNYqxy8ug3uwu24bi3a2629hyHi
+    - name: Run java application
+      shell: nohup java -jar /home/sourav10mohanty/customer-0.0.1.jar &

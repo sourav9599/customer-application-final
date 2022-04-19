@@ -1,0 +1,25 @@
+trigger:
+  branches:
+    include:
+     - master
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: TerraformInstaller@0
+  inputs:
+    terraformVersion: '1.0.6'
+- task: TerraformTaskV2@2
+  inputs:
+    provider: 'azurerm'
+    command: 'init'
+    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+    backendAzureRmResourceGroupName: 'TFstatebackup'
+    backendAzureRmStorageAccountName: 'tfstatebackupstorage'
+    backendAzureRmContainerName: 'tfstate'
+    backendAzureRmKey: 'TDWpEG1dlbTeSW1F0POD/pVtvSqWK/ysySi33k1u6SWS83tiUV16NG3hZDsOTdrbnvQxNcGa/s3oSx7ha1l1ew=='
+- task: TerraformTaskV2@2
+  inputs:
+    provider: 'azurerm'
+    command: 'apply'
+    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'

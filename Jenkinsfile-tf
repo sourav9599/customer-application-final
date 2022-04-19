@@ -1,0 +1,81 @@
+pipeline {
+    agent {
+        label 'master'
+    }
+    stages {
+        stage('Static Code Analysis') {
+            steps {
+                sh 'mvn pmd:pmd'
+            }
+        }
+        stage('Sonarqube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn clean verify sonar:sonar -Dsonar.projectKey=Customer-application'
+                }
+            }
+        }
+        stage('Quality gate') {
+            steps {
+                waitForQualityGate abortPipeline: true
+            }
+        }
+        stage ('Artifactory configuration') {
+            steps {
+                rtMavenDeployer (
+                    id: 'MAVEN_DEPLOYER',
+                    serverId: 'jfrog-gcp',
+                    releaseRepo: 'maven-local-release',
+                    snapshotRepo: 'maven-local-snapshot'
+                )
+            }
+        }
+
+        stage ('Exec Maven') {
+            steps {
+                rtMavenRun (
+                    tool: 'MAVEN_HOME',
+                    pom: 'pom.xml',
+                    goals: 'clean package',
+                    deployerId: 'MAVEN_DEPLOYER'
+                )
+            }
+        }
+
+        stage ('Publish build info') {
+            steps {
+                rtPublishBuildInfo (
+                    serverId: 'jfrog-gcp'
+                )
+            }
+        }
+        stage ('Creating a LinuxVM') {
+            steps {
+                sh '''
+                cd terraform
+                terraform init
+                terraform apply -auto-approve
+                username=`terraform output vm_username | tr -d '"'`
+                password=`terraform output vm_password | tr -d '"'`
+                ip=`terraform output vm_ip | tr -d '"'`
+                echo "${ip} ansible_user=${username} ansible_become_password=${password}" >> ./ansible/hosts
+                ssh-copy-id -o StrictHostKeyChecking=no ${username}@${ip}
+                '''
+            // terraform output tls_private_key > ./ansible/private_key
+            // chmod 400 ./ansible/private_key
+            // cat ~/.ssh/id_rsa.pub | ssh -i ./ansible/private_key -o StrictHostKeyChecking=no ${username}@${ip} "mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && chmod -R go= ~/.ssh && cat >> ~/.ssh/authorized_keys"
+            }
+        }
+        stage('Executing Ansible Playbook')
+        {
+            steps {
+                sh 'ansible-playbook ./terraform/ansible/deploy.yaml'
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

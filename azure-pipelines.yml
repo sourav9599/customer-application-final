@@ -1,0 +1,91 @@
+# Maven
+# Build your Java project and run tests with Apache Maven.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+
+trigger:
+  branches:
+    include:
+     - master
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+  - task: SonarCloudPrepare@1
+    inputs:
+      SonarCloud: 'sonar cloud'
+      organization: 'iiht-mindtree'
+      scannerMode: 'Other'
+      extraProperties: |
+        # Additional properties that will be passed to the scanner,
+        # Put one key=value per line, example:
+        # sonar.exclusions=**/*.bin
+        sonar.projectKey=iiht-mindtree_Comprehensive-Assessment--II
+        sonar.projectName=Comprehensive Assessment- II
+  - task: Maven@3
+    displayName: maven clean package
+    inputs:
+      mavenPomFile: 'pom.xml'
+      goals: 'clean package'
+      publishJUnitResults: true
+      testResultsFiles: '**/surefire-reports/TEST-*.xml'
+      javaHomeOption: 'JDKVersion'
+      jdkVersionOption: '1.11'
+      mavenVersionOption: 'Default'
+      mavenOptions: '-Xmx3072m'
+      mavenAuthenticateFeed: false
+      effectivePomSkip: false
+      sonarQubeRunAnalysis: true
+      isJacocoCoverageReportXML: true
+      sqMavenPluginVersionChoice: 'latest'
+      pmdRunAnalysis: true
+
+  - task: SonarCloudAnalyze@1
+
+  #  - task: ArtifactoryGenericUpload@2
+  #    inputs:
+  #      artifactoryService: 'jfrog repository'
+  #      specSource: 'taskConfiguration'
+  #      fileSpec: |
+  #        {
+  #          "files": [
+  #            {
+  #              "pattern": "*/*.jar",
+  #              "target": "azure-devops-release"
+  #            }
+  #          ]
+  #        }
+  #      failNoOp: false
+  #      insecureTls: true
+  - task: Docker@2
+    displayName: Build and Push image
+    inputs:
+      containerRegistry: 'dockerhub'
+      repository: 'souravcoder99/customer-application-springboot'
+      command: 'buildAndPush'
+      Dockerfile: '**/Dockerfile'
+      tags: 'latest'
+  
+  - task: CopyFiles@2
+    displayName: copying artifacts to staging directory
+    inputs:
+      SourceFolder: '$(Build.Repository.LocalPath)'
+      Contents: |
+        kubernetes/**
+        azure-devops/terraform/**
+        ansible/**
+        target/**
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      CleanTargetFolder: true
+      OverWrite: true
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'Manifests'
+      publishLocation: 'Container'
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+  
+    
+

@@ -1,0 +1,87 @@
+pipeline {
+    agent {
+        label 'master'
+    }
+    environment {
+        registry = 'souravcoder99/customer-dockerapp'
+        registryCredential = 'docker-cred'
+        dockerImage = ''
+    }
+
+    stages {
+        stage('Static Code Analysis') {
+            steps {
+                sh 'mvn pmd:pmd'
+            }
+        }
+        stage('Sonarqube Analysis') {
+            steps {
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'mvn clean verify sonar:sonar -Dsonar.projectKey=Customer-application'
+                    }
+            }
+        }
+        stage('Quality gate') {
+            steps {
+                waitForQualityGate abortPipeline: true
+            }
+        }
+        stage ('Artifactory configuration') {
+            steps {
+                rtMavenDeployer (
+                    id: 'MAVEN_DEPLOYER',
+                    serverId: 'jfrog-gcp',
+                    releaseRepo: 'maven-local-release',
+                    snapshotRepo: 'maven-local-snapshot'
+                )
+            }
+        }
+
+        stage ('Exec Maven') {
+            steps {
+                rtMavenRun (
+                    tool: 'MAVEN_HOME',
+                    pom: 'pom.xml',
+                    goals: 'clean package',
+                    deployerId: 'MAVEN_DEPLOYER'
+                )
+            }
+        }
+
+        stage ('Publish build info') {
+            steps {
+                rtPublishBuildInfo (
+                    serverId: 'jfrog-gcp'
+                )
+            }
+        }
+        stage('Building image') {
+            steps {
+                script {
+                    dockerImage = docker.build registry
+                }
+            }
+        }
+
+        stage('Upload Image') {
+            steps {
+                script {
+                    docker.withRegistry( '', registryCredential ) {
+                        dockerImage.push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to AKS') {
+            steps {
+                kubernetesDeploy configs: 'kubernetes/', kubeConfig: [path: ''], kubeconfigId: 'kube-config', secretName: '', ssh: [sshCredentialsId: '*', sshServer: ''], textCredentials: [certificateAuthorityData: '', clientCertificateData: '', clientKeyData: '', serverUrl: 'https://']
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
